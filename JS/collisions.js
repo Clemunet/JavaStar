@@ -21,7 +21,11 @@
 
             enemyBullets = enemyBullets.filter(function (bullet) {
 
-                return bullet.alive && bullet.y < viewport.height;
+                return bullet.alive &&
+                    bullet.x > -100 &&
+                    bullet.x < viewport.width + 100 &&
+                    bullet.y > -100 &&
+                    bullet.y < viewport.height + 100;
             });
             explosions = explosions.filter(function(explosion){
 
@@ -65,6 +69,11 @@ function checkCollision(a, b) {
 }
 
 function damagePlayer(damage) {
+    if (leMichShip.superShieldTimer > 0) {
+        screenShake = Math.max(screenShake, 3);
+        playTone(360, 0.07, 0.018, "sine");
+        return;
+    }
     if (leMichShip.damageTimer > 0) {
         return;
     }
@@ -105,10 +114,38 @@ function damageCompanion(companion, damage) {
     }
 }
 
+function destroyEnemy(enemy, awardScore = true) {
+    if (!enemy.alive) return;
+
+    enemy.alive = false;
+    trySpawnBonus(enemy);
+    if (awardScore) {
+        leMichShip.score += enemy.score;
+    }
+    if (enemy.isLevelBoss) {
+        registerLevelBossDestroyed();
+    } else if (awardScore) {
+        registerStandardEnemyDestroyed();
+    }
+
+    const visualScale = Math.max(
+        0.65,
+        Math.min(2.5, Math.max(enemy.width, enemy.height) / 180)
+    );
+    createExplosion(
+        enemy.x + enemy.width / 2,
+        enemy.y + enemy.height / 2,
+        0,
+        0,
+        visualScale
+    );
+}
+
         function checkBulletHits() {
 
             for (const bullet of bullets) {
                 for (const enemy of enemies) {
+                    if (!bullet.alive || !enemy.alive) continue;
                     if (checkCollision(bullet, enemy)) {
 
                         bullet.alive = false;
@@ -117,11 +154,7 @@ function damageCompanion(companion, damage) {
                         screenShake = Math.max(screenShake, 2);
                         playTone(220, 0.04, 0.012, "square");
                         if (enemy.health <= 0) {
-
-                            enemy.alive = false;
-
-                            leMichShip.score += enemy.score;
-
+                            destroyEnemy(enemy);
                         }
                     }
                 }
@@ -131,6 +164,7 @@ function checkMissileHits() {
 
     for (const missile of missiles) {
         for (const enemy of enemies) {
+            if (!missile.alive || !enemy.alive) continue;
             if (checkCollision(missile, enemy)) {
                 missile.alive = false;
                 createExplosion(
@@ -156,6 +190,8 @@ function checkExplosionDamage() {
 
         for (const enemy of enemies) {
 
+            if (!enemy.alive) continue;
+
             const centerX = enemy.x + enemy.width / 2;
             const centerY = enemy.y + enemy.height / 2;
             const dx = centerX - explosion.x;
@@ -167,10 +203,7 @@ function checkExplosionDamage() {
                 enemy.hitFlash = 8;
             }
             if (enemy.health <= 0) {
-
-                enemy.alive = false;
-
-                leMichShip.score += enemy.score;
+                destroyEnemy(enemy);
             }
         }
         explosion.hasDamaged = true;
@@ -178,15 +211,25 @@ function checkExplosionDamage() {
 }
 function checkEnemyHits() {
     for (const enemy of enemies) {
+        if (!enemy.alive) continue;
         if (checkCollision(enemy, leMichShip)) {
-
-            enemy.alive = false;
-            damagePlayer(20);
+            if (enemy.isLevelBoss) {
+                damagePlayer(29.75);
+                enemy.y = Math.max(-enemy.height / 2, enemy.y - 25);
+            } else {
+                destroyEnemy(enemy, false);
+                damagePlayer(20);
+            }
         } else {
             for (const companion of companions) {
                 if (companion.active && checkCollision(enemy, companion)) {
-                    enemy.alive = false;
-                    damageCompanion(companion, 1);
+                    if (enemy.isLevelBoss) {
+                        damageCompanion(companion, 3);
+                        enemy.y = Math.max(-enemy.height / 2, enemy.y - 25);
+                    } else {
+                        destroyEnemy(enemy, false);
+                        damageCompanion(companion, 1);
+                    }
                     break;
                 }
             }
@@ -199,7 +242,7 @@ function checkEnemyBulletHits() {
 
         if (checkCollision(bullet, leMichShip)) {
             bullet.alive = false;
-            damagePlayer(10);
+            damagePlayer(bullet.damage ?? 10);
         } else {
             for (const companion of companions) {
                 if (companion.active && checkCollision(bullet, companion)) {
@@ -223,21 +266,31 @@ function checkEnemyBulletHits() {
             }
 
             updateStars();
+            updateSpaceDecorations();
+            updateAsteroidStorm();
+            updateSupernovaEvent();
             updatePlayer();
             updateBullets();
             updateMissiles();
             updateExplosions();
             updateEnemyBullets();
             updateEnemies();
+            updateBonuses();
             checkBulletHits();
             checkEnemyBulletHits();
             checkEnemyHits();
             checkMissileHits();
             checkExplosionDamage();
+            checkAsteroidStormHits();
+            checkSupernovaHits();
+            checkBonusPickups();
             cleanObjects();
+            cleanAsteroidStorm();
+            cleanBonuses();
 
 
-            if (enemies.length === 0) {
+            const levelControlsSpawning = updateLevelOneProgress();
+            if (!levelControlsSpawning && enemies.length === 0) {
                 waveCooldown--;
                 if (waveCooldown <= 0) {
                     spawnWave();

@@ -1,10 +1,12 @@
+
 function move(ship, angleOffset) {
 
     const angle = (ship.rotation + angleOffset) * Math.PI / 180;
 
-    ship.x += Math.sin(angle) * ship.speed;
+    const speedMultiplier = ship === leMichShip ? getPlayerSpeedMultiplier() : 1;
+    ship.x += Math.sin(angle) * ship.speed * speedMultiplier;
 
-    ship.y -= Math.cos(angle) * ship.speed;
+    ship.y -= Math.cos(angle) * ship.speed * speedMultiplier;
 
 }
 function getDirectionVector(ship, angleOffset) {
@@ -157,10 +159,21 @@ function updateCompanion(companion) {
         if (leMichShip.missileCooldown > 0) {
             leMichShip.missileCooldown--;
         }
+        if (leMichShip.rapidFireTimer > 0) {
+            leMichShip.rapidFireTimer--;
+        }
+        if (leMichShip.superShieldTimer > 0) {
+            leMichShip.superShieldTimer--;
+        }
+        if (leMichShip.turboTimer > 0) leMichShip.turboTimer--;
+        if (leMichShip.speedBonusTimer > 0) leMichShip.speedBonusTimer--;
 
 
 
         //leMichShip controls
+        if (gamepadState.connected) {
+            applyGamepadMovement(leMichShip);
+        }
         if (keys["q"]) {
             move(leMichShip, -90);
         }
@@ -173,15 +186,16 @@ function updateCompanion(companion) {
         if (keys["s"]) {
             move(leMichShip, 180);
         }
-        if (keys["Space"] && leMichShip.fireCooldown <= 0 && useEnergy(2)) {
+        if ((keys["Space"] || gamepadState.frontFire)
+            && leMichShip.fireCooldown <= 0 && useEnergy(1.4)) {
 
             shoot(
                 leMichShip,
                 leMichShip.frontCannons,
                 0
             );
-            leMichShip.fireCooldown = 10;
-            playTone(680, 0.06, 0.025, "square");
+            leMichShip.fireCooldown = getPlayerFireCooldown();
+            playPlayerLaserSound("front");
         }
         if (keys["a"]) {
             leMichShip.rotation -= leMichShip.rotationSpeed;
@@ -189,7 +203,8 @@ function updateCompanion(companion) {
         if (keys["e"]) {
             leMichShip.rotation += leMichShip.rotationSpeed;
         }
-        if (keys["1"] && leMichShip.fireCooldown <= 0 && useEnergy(6)) {
+        if ((keys["1"] || gamepadState.leftFire)
+            && leMichShip.fireCooldown <= 0 && useEnergy(4.2)) {
 
             shoot(
                 leMichShip,
@@ -197,11 +212,12 @@ function updateCompanion(companion) {
                 -90
             );
 
-            leMichShip.fireCooldown = 10;
-            playTone(520, 0.08, 0.03, "square");
+            leMichShip.fireCooldown = getPlayerFireCooldown();
+            playPlayerLaserSound("side");
         }
 
-        if (keys["3"] && leMichShip.fireCooldown <= 0 && useEnergy(6)) {
+        if ((keys["3"] || gamepadState.rightFire)
+            && leMichShip.fireCooldown <= 0 && useEnergy(4.2)) {
 
             shoot(
                 leMichShip,
@@ -209,17 +225,18 @@ function updateCompanion(companion) {
                 90
             );
 
-            leMichShip.fireCooldown = 10;
-            playTone(520, 0.08, 0.03, "square");
+            leMichShip.fireCooldown = getPlayerFireCooldown();
+            playPlayerLaserSound("side");
         }
-        if (keys["2"] && leMichShip.missileCooldown <= 0 && useEnergy(25)) {
-
-            createMissile(
-                leMichShip
-            );
-            leMichShip.missileCooldown = 180;
-            playTone(130, 0.25, 0.045, "sawtooth");
-
+        if ((keys["2"] || gamepadState.missile)
+            && leMichShip.missileCooldown <= 0) {
+            const usesBonusSalvo = leMichShip.bonusMissileSalvos > 0;
+            if (usesBonusSalvo || useEnergy(17.5)) {
+                createMissileSalvo(leMichShip, usesBonusSalvo ? 8 : 3);
+                if (usesBonusSalvo) leMichShip.bonusMissileSalvos--;
+                leMichShip.missileCooldown = 180;
+                playMissileLaunchSound();
+            }
         }
 
         leMichShip.x = Math.max(0, Math.min(

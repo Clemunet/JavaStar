@@ -126,6 +126,26 @@ function drawWave() {
     ctx.fillText("VAGUE " + displayedWave, viewport.width - 30, 40);
 }
 
+function drawLevelObjective() {
+    ctx.textAlign = "center";
+    const boss = enemies.find(enemy => enemy.alive && enemy.isLevelBoss);
+    if (boss) {
+        const barWidth = Math.min(700, viewport.width * 0.42);
+        const x = (viewport.width - barWidth) / 2;
+        ctx.fillStyle = "#FF6655";
+        ctx.font = "bold 24px Consolas";
+        ctx.fillText("ECLIPSE — VAISSEAU AMIRAL", viewport.width / 2, 38);
+        drawBar(x, 52, barWidth, 18, boss.health, boss.maxHealth, "#D52B2B");
+    } else {
+        ctx.fillStyle = levelOne.standardKills >= LEVEL_ONE_TARGET ? "#FFAA44" : "#D8E8FF";
+        ctx.font = "22px Consolas";
+        const objective = levelOne.standardKills >= LEVEL_ONE_TARGET
+            ? "OBJECTIF : INTERCEPTER LA SIGNATURE ENNEMIE"
+            : "OBJECTIF : AVANT-GARDE  " + levelOne.standardKills + " / " + LEVEL_ONE_TARGET;
+        ctx.fillText(objective, viewport.width / 2, 38);
+    }
+}
+
 function drawCompanionStatus() {
     ctx.textAlign = "right";
     ctx.font = "20px Consolas";
@@ -153,6 +173,42 @@ function drawCompanionStatus() {
     });
 }
 
+function drawMusicStatus() {
+    ctx.textAlign = "right";
+    ctx.font = "16px Consolas";
+    ctx.fillStyle = musicEnabled ? "#8FA8C8" : "#666B75";
+    ctx.fillText(
+        "M  MUSIQUE " + (musicEnabled ? "ON" : "OFF"),
+        viewport.width - 30,
+        viewport.height - 25
+    );
+}
+
+function drawBonusStatus() {
+    ctx.textAlign = "right";
+    ctx.font = "18px Consolas";
+    if (leMichShip.rapidFireTimer > 0) {
+        ctx.fillStyle = "#45DFFF";
+        ctx.fillText("SURCADENCE  " + Math.ceil(leMichShip.rapidFireTimer / 60) + " s", viewport.width - 30, 145);
+    }
+    if (leMichShip.superShieldTimer > 0) {
+        ctx.fillStyle = "#D083FF";
+        ctx.fillText("SUPERBOUCLIER  " + Math.ceil(leMichShip.superShieldTimer / 60) + " s", viewport.width - 30, 173);
+    }
+    if (leMichShip.bonusMissileSalvos > 0) {
+        ctx.fillStyle = "#FFB347";
+        ctx.fillText("SALVES x8  × " + leMichShip.bonusMissileSalvos, viewport.width - 30, 201);
+    }
+    if (leMichShip.speedBonusTimer > 0) {
+        ctx.fillStyle = "#FF69BC";
+        ctx.fillText("VITESSE +  " + Math.ceil(leMichShip.speedBonusTimer / 60) + " s", viewport.width - 30, 229);
+    }
+    if (leMichShip.turboTimer > 0) {
+        ctx.fillStyle = "#FFF16B";
+        ctx.fillText("TURBO  " + Math.ceil(leMichShip.turboTimer / 60) + " s", viewport.width - 30, 257);
+    }
+}
+
 function drawPause() {
     ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
     ctx.fillRect(0, 0, viewport.width, viewport.height);
@@ -161,7 +217,12 @@ function drawPause() {
     ctx.font = "64px Arial";
     ctx.fillText("PAUSE", viewport.width / 2, viewport.height / 2 - 20);
     ctx.font = "24px Arial";
-    ctx.fillText("Échap pour reprendre", viewport.width / 2, viewport.height / 2 + 40);
+    ctx.fillText("Échap ou Start pour reprendre", viewport.width / 2, viewport.height / 2 + 40);
+    ctx.font = "19px Consolas";
+    ctx.fillStyle = "#9CCBFF";
+    ctx.fillText("Stick G : déplacement   Stick D : visée   RT : tir   LT : missiles", viewport.width / 2, viewport.height / 2 + 90);
+    ctx.fillText("LB / X : batterie gauche   RB / B : batterie droite", viewport.width / 2, viewport.height / 2 + 125);
+    ctx.fillText("Pavé numérique 5 / Y : turbo pendant 4 secondes", viewport.width / 2, viewport.height / 2 + 160);
 }
 
 
@@ -219,6 +280,11 @@ function drawHUD() {
 
     drawCompanionStatus();
 
+    drawMusicStatus();
+    drawBonusStatus();
+
+    drawLevelObjective();
+
 }
 
 
@@ -239,7 +305,12 @@ function drawGame() {
 
     drawNebuleuse();
 
+    drawSpaceDecorations();
+
     drawStars();
+
+    drawAsteroidStorm();
+    drawSupernovaEvent();
 
     drawBullets();
     drawMissiles();
@@ -248,7 +319,10 @@ function drawGame() {
 
     drawEnemies();
 
+    drawBonuses();
+
     drawShip(leMichShip);
+    drawSuperShield();
     drawHitbox(leMichShip); //wip collision
 
     for (const companion of companions) {

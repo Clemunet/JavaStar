@@ -49,7 +49,7 @@ function drawMenu() {
     ctx.font = "40px Arial";
 
     ctx.fillText(
-        "Appuie sur Entrée",
+        "Appuie sur Entrée ou A",
         viewport.width / 2,
         viewport.height / 2
     );
@@ -79,7 +79,7 @@ function drawGameOver() {
     );
 
     ctx.fillText(
-        "Appuie sur Entrée pour recommencer",
+        "Appuie sur Entrée ou A pour recommencer",
         viewport.width / 2,
         viewport.height / 2 + 80
     );
@@ -91,7 +91,7 @@ function startNewGame() {
     enemies = [];
     enemyBullets = [];
 
-    leMichShip.lives = 40;
+    leMichShip.lives = leMichShip.maxLives;
     leMichShip.shield = leMichShip.maxShield;
     leMichShip.shieldRegenDelay = 0;
     leMichShip.damageTimer = 0;
@@ -122,8 +122,15 @@ function startNewGame() {
 
     waveCooldown = 30;
     currentWave = 1;
+    nextBattleshipWave = 8 + Math.floor(Math.random() * 5);
+    lastFrigateFormation = -1;
+    resetAsteroidStorm();
+    resetSupernovaEvent();
+    resetLevelOneMission();
+    resetBonuses();
 
     gameState = GAMESTATE.GAME;
+    startMusic();
 }
 //ALERTE BOSS
 function showAlert(message, duration) {
@@ -169,14 +176,29 @@ function drawShip(ship) {
 }
 
 function drawBullet(bullet) {
-    ctx.fillStyle = "blue";
-
-        ctx.fillRect(
-            bullet.x,
-            bullet.y,
-            bullet.width,
-            bullet.height
+    const visualWidth = 18;
+    const visualHeight = 42;
+    ctx.save();
+    ctx.translate(
+        bullet.x + bullet.width / 2,
+        bullet.y + bullet.height / 2
+    );
+    ctx.rotate(Math.atan2(bullet.speedY, bullet.speedX) + Math.PI / 2);
+    ctx.shadowColor = "rgba(50, 190, 255, 0.9)";
+    ctx.shadowBlur = 9;
+    if (playerLaserImage.complete && playerLaserImage.naturalWidth) {
+        ctx.drawImage(
+            playerLaserImage,
+            -visualWidth / 2,
+            -visualHeight / 2,
+            visualWidth,
+            visualHeight
         );
+    } else {
+        ctx.fillStyle = "#56DFFF";
+        ctx.fillRect(-bullet.width / 2, -bullet.height / 2, bullet.width, bullet.height);
+    }
+    ctx.restore();
 
     if (DEBUG) {
         drawHitbox(bullet);
@@ -216,41 +238,117 @@ function drawMissiles() {
         }
     }
 }
-function drawExplosions() {
+let processedExplosionFrames = null;
+
+function getProcessedExplosionFrames() {
+    if (processedExplosionFrames) {
+        return processedExplosionFrames;
+    }
+    if (!explosionImage.complete || !explosionImage.naturalWidth) {
+        return null;
+    }
 
     const columns = 4;
-    const scale = 0.45;
+    const rows = 3;
+    const frameWidth = explosionImage.naturalWidth / columns;
+    const frameHeight = explosionImage.naturalHeight / rows;
+    processedExplosionFrames = [];
+
+    for (let frame = 0; frame < columns * rows; frame++) {
+        const frameCanvas = document.createElement("canvas");
+        frameCanvas.width = Math.round(frameWidth);
+        frameCanvas.height = Math.round(frameHeight);
+        const frameContext = frameCanvas.getContext("2d", { willReadFrequently: true });
+
+        frameContext.drawImage(
+            explosionImage,
+            frame % columns * frameWidth,
+            Math.floor(frame / columns) * frameHeight,
+            frameWidth,
+            frameHeight,
+            0,
+            0,
+            frameCanvas.width,
+            frameCanvas.height
+        );
+
+        const imageData = frameContext.getImageData(
+            0,
+            0,
+            frameCanvas.width,
+            frameCanvas.height
+        );
+        const pixels = imageData.data;
+        const centerX = frameCanvas.width / 2;
+        const centerY = frameCanvas.height / 2;
+        const maxRadius = Math.min(centerX, centerY);
+
+        for (let y = 0; y < frameCanvas.height; y++) {
+            for (let x = 0; x < frameCanvas.width; x++) {
+                const index = (y * frameCanvas.width + x) * 4;
+                const brightness = Math.max(
+                    pixels[index],
+                    pixels[index + 1],
+                    pixels[index + 2]
+                );
+                const backgroundRemoval = Math.max(
+                    0,
+                    Math.min(1, (brightness - 42) / 70)
+                );
+                const distance = Math.hypot(x - centerX, y - centerY);
+                const edgeFade = Math.max(
+                    0,
+                    Math.min(1, (maxRadius - distance) / (maxRadius * 0.28))
+                );
+
+                pixels[index + 3] = Math.round(
+                    pixels[index + 3] * backgroundRemoval * edgeFade
+                );
+            }
+        }
+
+        frameContext.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
+        frameContext.putImageData(imageData, 0, 0);
+        processedExplosionFrames.push(frameCanvas);
+    }
+
+    return processedExplosionFrames;
+}
+
+function drawExplosions() {
+
+    const frames = getProcessedExplosionFrames();
+    if (!frames) {
+        return;
+    }
 
     for (const explosion of explosions) {
 
-        if (!explosionImage.complete) {
-            continue;
-        }
+        if (!explosion.alive) continue;
 
-        const frameX =
-            (explosion.frame % columns) * explosion.frameWidth;
+        const animationProgress = explosion.frame / explosion.frameCount;
+        const scale = (0.48 + Math.sin(animationProgress * Math.PI) * 0.12)
+            * explosion.visualScale;
+        const fadeOut = animationProgress > 0.75
+            ? (1 - animationProgress) / 0.25
+            : 1;
 
-        const frameY =
-            Math.floor(explosion.frame / columns) * explosion.frameHeight;
+        const frameImage = frames[explosion.frame];
+        if (!frameImage) continue;
+        const drawWidth = frameImage.width * scale;
+        const drawHeight = frameImage.height * scale;
 
-        const drawWidth = explosion.frameWidth * scale;
-        const drawHeight = explosion.frameHeight * scale;
-
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, fadeOut);
+        ctx.imageSmoothingEnabled = true;
         ctx.drawImage(
-            explosionImage,
-
-            frameX,
-            frameY,
-
-            explosion.frameWidth,
-            explosion.frameHeight,
-
+            frameImage,
             explosion.x - drawWidth / 2,
             explosion.y - drawHeight / 2,
-
             drawWidth,
             drawHeight
         );
+        ctx.restore();
 
         if (DEBUG) {
 
@@ -266,7 +364,7 @@ function drawExplosions() {
     }
 }
 
-function createExplosion(x, y, damage, radius) {
+function createExplosion(x, y, damage, radius, visualScale = 1) {
 
     const explosion = {
 
@@ -274,10 +372,11 @@ function createExplosion(x, y, damage, radius) {
         y: y,
         damage: damage,
         radius: radius,
+        visualScale: visualScale,
         animationTimer: 0,
         frame: 0,
-        frameWidth: 384,
-        frameHeight: 384,
+        frameCount: 12,
+        frameDuration: 3,
 
         hasDamaged: false,
 
@@ -295,19 +394,41 @@ function drawEnemyBullets() {
 
     for (const bullet of enemyBullets) {
 
-        if (bullet.type === "frigate") {
-            ctx.fillStyle = "#FF3333";
-        }
-        else {
-            ctx.fillStyle = "#FFAA00";
+        ctx.save();
+        const isRadial = bullet.type === "battleship-radial";
+        const isBattleship = bullet.type === "battleship" || isRadial;
+        const visualWidth = isRadial ? 20 : (isBattleship ? 26 : 16);
+        const visualHeight = isRadial ? 34 : (isBattleship ? 52 : 36);
+        ctx.translate(
+            bullet.x + bullet.width / 2,
+            bullet.y + bullet.height / 2
+        );
+        ctx.rotate(Math.atan2(bullet.speedY, bullet.speedX) + Math.PI / 2);
+        ctx.shadowColor = isRadial
+            ? "rgba(255, 190, 35, 0.95)"
+            : "rgba(255, 45, 20, 0.9)";
+        ctx.shadowBlur = isBattleship ? 14 : 9;
+        if (isRadial) ctx.filter = "hue-rotate(18deg) brightness(1.18)";
+
+        if (enemyLaserImage.complete && enemyLaserImage.naturalWidth) {
+            ctx.drawImage(
+                enemyLaserImage,
+                -visualWidth / 2,
+                -visualHeight / 2,
+                visualWidth,
+                visualHeight
+            );
+        } else {
+            ctx.fillStyle = isRadial ? "#FFCC33" : "#FF4422";
+            ctx.fillRect(
+                -bullet.width / 2,
+                -bullet.height / 2,
+                bullet.width,
+                bullet.height
+            );
         }
 
-        ctx.fillRect(
-            bullet.x,
-            bullet.y,
-            bullet.width,
-            bullet.height
-        );
+        ctx.restore();
 
         if (DEBUG) {
             drawHitbox(bullet);
